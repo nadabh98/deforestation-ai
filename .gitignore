@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets / environment
+.env
+*.key
+*.json
+
+# Data
+data/
+*.tif
+*.tiff
+
+# Model weights
+models/*.pth
+models/*.pt
+models/*.onnx
+
+# Temporary files
+*.log
+.DS_Store
+
+# Streamlit
+.streamlit/
+
+# Cloud / cache
+.pytest_cache/

@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+
+data/
+reports/
+*.tif
+*.tiff
+
+.git/
+.gitignore
+
+*.png
+*.jpg
+*.jpeg
+
+.ipynb_checkpoints/

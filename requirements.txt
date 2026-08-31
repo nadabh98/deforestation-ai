@@ -1,0 +1,8 @@
+fastapi==0.141.1
+uvicorn==0.52.4
+numpy==2.5.2
+rasterio==1.5.1
+python-multipart==0.0.32
+torch==2.13.0
+
+
