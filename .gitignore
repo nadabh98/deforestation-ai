@@ -1,30 +1,53 @@
+# =========================
 # Python
+# =========================
 __pycache__/
 *.py[cod]
+.pytest_cache/
+
+# =========================
+# Virtual environments
+# =========================
 .venv/
 venv/
 
+# =========================
 # Secrets / environment
+# =========================
 .env
 *.key
-*.json
 
-# Data
+# =========================
+# Satellite / generated data
+# =========================
 data/
 *.tif
 *.tiff
 
-# Model weights
+v2/data/
+v2/reports/results/
+v2/reports/*.png
+
+# =========================
+# ML model weights
+# =========================
 models/*.pth
 models/*.pt
 models/*.onnx
+*.pt
 
-# Temporary files
+# =========================
+# Logs / OS
+# =========================
 *.log
 .DS_Store
 
+# =========================
 # Streamlit
+# =========================
 .streamlit/
 
+# =========================
 # Cloud / cache
-.pytest_cache/
+# =========================
+.gcloud/
