@@ -1,14 +1,35 @@
 import io
 import os
+import sys
 
 import numpy as np
 import rasterio
 import torch
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+# ============================================================
+# CHEMIN DU PROJET
+# ============================================================
+
+PROJECT_ROOT = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        ".."
+    )
+)
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# ============================================================
+# IMPORTS PROJET
+# ============================================================
 
 from scripts.model import UNet
+from v2.scripts.pipeline_v2 import run_v2
 
 
 # ============================================================
@@ -32,7 +53,7 @@ app = FastAPI(
         "API de détection de la déforestation "
         "par imagerie satellite Sentinel-2"
     ),
-    version="1.0.0"
+    version="2.0.0"
 )
 
 
@@ -67,6 +88,20 @@ print("Threshold :", THRESHOLD)
 
 
 # ============================================================
+# MODELE DE REQUETE V2
+# ============================================================
+
+class AnalyzeV2Request(BaseModel):
+
+    latitude: float
+    longitude: float
+
+    size: int = 2560
+
+    recent_days: int = 90
+
+
+# ============================================================
 # ENDPOINT RACINE
 # ============================================================
 
@@ -75,7 +110,14 @@ def root():
 
     return {
         "message": "Deforestation AI API",
-        "status": "online"
+        "status": "online",
+        "version": "2.0.0",
+        "endpoints": [
+            "/health",
+            "/analyze",
+            "/compare",
+            "/analyze-v2"
+        ]
     }
 
 
@@ -121,7 +163,7 @@ def read_tiff(file_bytes):
 
 
 # ============================================================
-# ANALYSE
+# ANALYSE V1
 # ============================================================
 
 @app.post("/analyze")
@@ -131,7 +173,7 @@ async def analyze(
 ):
 
     # --------------------------------------------------------
-    # Lecture des fichiers
+    # Lecture
     # --------------------------------------------------------
 
     data_2020 = await image_2020.read()
@@ -144,7 +186,6 @@ async def analyze(
     image_2024_array, width_2024, height_2024, bands_2024, crs_2024 = (
         read_tiff(data_2024)
     )
-
 
     # --------------------------------------------------------
     # Vérifications
@@ -174,31 +215,22 @@ async def analyze(
             detail="Les images 2020 et 2024 doivent avoir la même taille."
         )
 
-
     # --------------------------------------------------------
-    # Conversion float32
+    # Normalisation
     # --------------------------------------------------------
 
-    image_2020_array = image_2020_array.astype(
-        np.float32
+    image_2020_array = (
+        image_2020_array.astype(np.float32)
+        / 10000.0
     )
 
-    image_2024_array = image_2024_array.astype(
-        np.float32
+    image_2024_array = (
+        image_2024_array.astype(np.float32)
+        / 10000.0
     )
 
-
     # --------------------------------------------------------
-    # Normalisation Sentinel-2
-    # Même preprocessing que le dataset
-    # --------------------------------------------------------
-
-    image_2020_array /= 10000.0
-    image_2024_array /= 10000.0
-
-
-    # --------------------------------------------------------
-    # Combinaison 2020 + 2024
+    # Combinaison
     # --------------------------------------------------------
 
     image = np.concatenate(
@@ -209,23 +241,16 @@ async def analyze(
         axis=0
     )
 
-
     # --------------------------------------------------------
-    # NumPy → PyTorch
+    # PyTorch
     # --------------------------------------------------------
 
     image_tensor = torch.from_numpy(
         image
-    ).unsqueeze(0)
-
-
-    image_tensor = image_tensor.to(
-        DEVICE
-    )
-
+    ).unsqueeze(0).to(DEVICE)
 
     # --------------------------------------------------------
-    # PREDICTION
+    # Prediction
     # --------------------------------------------------------
 
     with torch.no_grad():
@@ -242,20 +267,16 @@ async def analyze(
             probabilities >= THRESHOLD
         ).float()
 
-
     # --------------------------------------------------------
-    # MASQUE
+    # Masque
     # --------------------------------------------------------
 
     mask = predictions[
         0, 0
-    ].cpu().numpy().astype(
-        np.uint8
-    )
-
+    ].cpu().numpy().astype(np.uint8)
 
     # --------------------------------------------------------
-    # CALCUL DU POURCENTAGE
+    # Calcul
     # --------------------------------------------------------
 
     total_pixels = mask.size
@@ -270,9 +291,8 @@ async def analyze(
         * 100
     )
 
-
     # --------------------------------------------------------
-    # RESULTAT
+    # Résultat
     # --------------------------------------------------------
 
     return {
@@ -291,8 +311,9 @@ async def analyze(
         )
     }
 
+
 # ============================================================
-# COMPARAISON 2020 → 2024
+# COMPARAISON V1 : 2020 → 2024
 # ============================================================
 
 @app.post("/compare")
@@ -302,7 +323,7 @@ async def compare(
 ):
 
     # --------------------------------------------------------
-    # Lecture des fichiers
+    # Lecture
     # --------------------------------------------------------
 
     data_2020 = await image_2020.read()
@@ -321,6 +342,7 @@ async def compare(
     # --------------------------------------------------------
 
     if bands_2020 != 4 or bands_2024 != 4:
+
         raise HTTPException(
             status_code=400,
             detail="Chaque image doit contenir exactement 4 bandes."
@@ -330,6 +352,7 @@ async def compare(
         width_2020 != width_2024
         or height_2020 != height_2024
     ):
+
         raise HTTPException(
             status_code=400,
             detail="Les deux images doivent avoir la même taille."
@@ -350,7 +373,7 @@ async def compare(
     )
 
     # --------------------------------------------------------
-    # Combinaison 2020 + 2024
+    # Combinaison
     # --------------------------------------------------------
 
     image = np.concatenate(
@@ -362,7 +385,7 @@ async def compare(
     )
 
     # --------------------------------------------------------
-    # Conversion PyTorch
+    # PyTorch
     # --------------------------------------------------------
 
     image_tensor = torch.from_numpy(
@@ -370,7 +393,7 @@ async def compare(
     ).unsqueeze(0).to(DEVICE)
 
     # --------------------------------------------------------
-    # PREDICTION
+    # Prediction
     # --------------------------------------------------------
 
     with torch.no_grad():
@@ -384,7 +407,7 @@ async def compare(
         ).float()
 
     # --------------------------------------------------------
-    # MASQUE
+    # Masque
     # --------------------------------------------------------
 
     mask = predictions[
@@ -392,7 +415,7 @@ async def compare(
     ].cpu().numpy().astype(np.uint8)
 
     # --------------------------------------------------------
-    # CALCUL
+    # Calcul
     # --------------------------------------------------------
 
     total_pixels = mask.size
@@ -408,7 +431,7 @@ async def compare(
     )
 
     # --------------------------------------------------------
-    # RESULTAT
+    # Résultat
     # --------------------------------------------------------
 
     return {
@@ -435,3 +458,140 @@ async def compare(
             2
         )
     }
+
+
+# ============================================================
+# ANALYSE V2
+# ============================================================
+
+@app.post("/analyze-v2")
+def analyze_v2(request: AnalyzeV2Request):
+
+    # --------------------------------------------------------
+    # Validation
+    # --------------------------------------------------------
+
+    if not -90 <= request.latitude <= 90:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Latitude invalide."
+        )
+
+    if not -180 <= request.longitude <= 180:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Longitude invalide."
+        )
+
+    if request.size <= 0:
+
+        raise HTTPException(
+            status_code=400,
+            detail="La taille de la zone doit être positive."
+        )
+
+    if request.recent_days <= 0:
+
+        raise HTTPException(
+            status_code=400,
+            detail="recent_days doit être supérieur à 0."
+        )
+
+    # --------------------------------------------------------
+    # Pipeline V2
+    # --------------------------------------------------------
+
+    try:
+
+        result = run_v2(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            size=request.size,
+            recent_days=request.recent_days
+        )
+
+    except Exception as e:
+
+        print(
+            "ERREUR PIPELINE V2 :",
+            repr(e)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors de l'analyse V2 : {e}"
+        )
+
+    # --------------------------------------------------------
+    # URLs des résultats
+    # --------------------------------------------------------
+
+    job_id = result["job_id"]
+
+    result["mask_url"] = (
+        f"/v2/results/{job_id}/mask"
+    )
+
+    result["probability_url"] = (
+        f"/v2/results/{job_id}/probability"
+    )
+
+    return result
+
+
+# ============================================================
+# RESULTAT V2 : MASQUE
+# ============================================================
+
+@app.get("/v2/results/{job_id}/mask")
+def get_v2_mask(job_id: str):
+
+    path = os.path.join(
+        "v2",
+        "reports",
+        "results",
+        job_id,
+        "mask.png"
+    )
+
+    if not os.path.isfile(path):
+
+        raise HTTPException(
+            status_code=404,
+            detail="Masque introuvable."
+        )
+
+    return FileResponse(
+        path,
+        media_type="image/png"
+    )
+
+
+# ============================================================
+# RESULTAT V2 : PROBABILITES
+# ============================================================
+
+@app.get("/v2/results/{job_id}/probability")
+def get_v2_probability(job_id: str):
+
+    path = os.path.join(
+        "v2",
+        "reports",
+        "results",
+        job_id,
+        "probability.png"
+    )
+
+    if not os.path.isfile(path):
+
+        raise HTTPException(
+            status_code=404,
+            detail="Carte de probabilité introuvable."
+        )
+
+    return FileResponse(
+        path,
+        media_type="image/png"
+    )

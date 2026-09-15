@@ -4,5 +4,6 @@ numpy==2.5.2
 rasterio==1.5.1
 python-multipart==0.0.32
 torch==2.13.0
-
-
+Pillow==11.3.0
+requests==2.32.5
+earthengine-api==1.7.40
